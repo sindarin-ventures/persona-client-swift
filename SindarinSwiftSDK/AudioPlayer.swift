@@ -9,13 +9,19 @@ class AudioPlayer: NSObject {
 
     // Buffer for incoming MP3 data chunks
     private var mp3DataBuffer = Data()
-    private let bufferThreshold: Int = 20000 // Adjust as necessary
+    private let initialBufferThreshold: Int = 20000 // Adjust as necessary
+    private var bufferThreshold: Int
+    private let maxBufferThreshold: Int = 100000 // Adjust as necessary
 
     // Timer to handle playing chunks when no new data arrives
     private var bufferTimer: Timer?
     private let bufferTimeout: TimeInterval = 1.0 // Time interval to wait for more data before playing
 
+    // Array to store temporary file URLs for cleanup
+    private var temporaryFileURLs: [URL] = []
+
     override init() {
+        bufferThreshold = initialBufferThreshold
         super.init()
         setupAudioSession()
         setupPlayer()
@@ -24,10 +30,8 @@ class AudioPlayer: NSObject {
     private func setupAudioSession() {
         audioSession = AVAudioSession.sharedInstance()
         do {
-            // Use optional binding to safely unwrap audioSession
             if let audioSession = audioSession {
-                try audioSession.setCategory(
-                        .playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
                 try audioSession.setActive(true)
             } else {
                 print("Audio session is not initialized")
@@ -54,8 +58,11 @@ class AudioPlayer: NSObject {
         // Check if buffer has enough data to start playing
         if mp3DataBuffer.count >= bufferThreshold {
             playAudioFromBuffer()
+            // Dynamically increase buffer threshold if necessary
+            if bufferThreshold < maxBufferThreshold {
+                bufferThreshold += initialBufferThreshold
+            }
         } else {
-            // Restart the timer to play the buffer after a timeout if no more data comes
             resetBufferTimer()
         }
     }
@@ -64,14 +71,16 @@ class AudioPlayer: NSObject {
         guard let player = player else { return }
 
         // Write the buffered data to a temporary file
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString + ".mp3")
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp3")
 
         do {
             try mp3DataBuffer.write(to: tempURL)
             let playerItem = AVPlayerItem(url: tempURL)
             audioQueue.append(playerItem)
             player.insert(playerItem, after: nil)
+
+            // Store the temporary file URL for later cleanup
+            temporaryFileURLs.append(tempURL)
 
             // Clear the buffer once data is written to file.
             mp3DataBuffer.removeAll()
@@ -112,17 +121,31 @@ class AudioPlayer: NSObject {
         mp3DataBuffer.removeAll()
         isPlaying = false
         bufferTimer?.invalidate()
+        cleanupTemporaryFiles()
     }
 
     @objc private func playerItemDidFinishPlaying(_ notification: Notification) {
         if let playerItem = notification.object as? AVPlayerItem,
-            let index = audioQueue.firstIndex(of: playerItem)
-        {
+            let index = audioQueue.firstIndex(of: playerItem) {
             audioQueue.remove(at: index)
         }
 
         if audioQueue.isEmpty {
             isPlaying = false
         }
+
+        // Optionally remove the associated temporary file
+        cleanupTemporaryFiles()
+    }
+
+    private func cleanupTemporaryFiles() {
+        for url in temporaryFileURLs {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                print("Failed to delete temporary file: \(error.localizedDescription)")
+            }
+        }
+        temporaryFileURLs.removeAll()
     }
 }
