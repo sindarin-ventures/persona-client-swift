@@ -153,11 +153,14 @@ public class SindarinSwiftSDK:NSObject, AVAudioPlayerDelegate, AudioRecorderMana
   }
 
   public func pause() {
-    // Implement pause logic
+      self.audioPlayer.stop()
+      self.stopRecording()
+      self.emit(event: "system", data: ["message": "pause"])
   }
 
   public func resume() {
-    // Implement resume logic
+      self.startRecording()
+      self.emit(event: "system", data: ["message": "resume"])
   }
 
   public func end() {
