@@ -15,21 +15,28 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
     override init() {
         self.audioSession = AVAudioSession.sharedInstance()
         super.init()
+        setupAudioSession()
         setupAudioRecorder()
     }
 
+    private func setupAudioSession() {
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Failed to setup audio session: \(error)")
+        }
+    }
+
     private func setupAudioRecorder() {
-        let settings =
-            [
+        let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16000,
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ] as [String: Any]
+        ]
 
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
-            try audioSession.setActive(true)
             audioRecorder = try AVAudioRecorder(url: self.directoryURL(), settings: settings)
             audioRecorder?.delegate = self
         } catch {
@@ -51,49 +58,80 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
     }
 
     func stopRecording() {
+        guard audioRecorder?.isRecording == true else { return }
         audioRecorder?.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
         lastReadPosition = 0 // Reset the read position
+
+        // Clean up resources after recording is finished
+        cleanupAfterRecording()
     }
 
     private func startRecordingTimer() {
         recordingTimer = Timer.scheduledTimer(
-            timeInterval: 1.0, target: self, selector: #selector(readAudioChunk), userInfo: nil,
-            repeats: true)
+            timeInterval: 0.1, // Possibly reduce interval if necessary
+            target: self,
+            selector: #selector(readAudioChunk),
+            userInfo: nil,
+            repeats: true
+        )
     }
 
     @objc private func readAudioChunk() {
         guard let recorder = audioRecorder, recorder.isRecording else { return }
-        let fileHandle: FileHandle
         do {
-            fileHandle = try FileHandle(forReadingFrom: self.directoryURL())
+            let fileHandle = try FileHandle(forReadingFrom: self.directoryURL())
+            defer { fileHandle.closeFile() } // Ensure the file is closed even if an error occurs
+
             fileHandle.seek(toFileOffset: UInt64(lastReadPosition))
             let data = fileHandle.readDataToEndOfFile()
-            fileHandle.closeFile()
             lastReadPosition += Int64(data.count)
-            let int16Data = convertTo16BitPcm(data)
-            delegate?.didCaptureAudioChunk(int16Data)
-            print("Captured audio chunk")
+
+            if !data.isEmpty {
+                let int16Data = convertTo16BitPcm(data)
+                delegate?.didCaptureAudioChunk(int16Data)
+                print("Captured audio chunk")
+            }
         } catch {
             print("Failed to read audio data: \(error)")
         }
     }
 
     private func convertTo16BitPcm(_ data: Data) -> Data {
-        let audioBuffer = data.withUnsafeBytes {
-            Array(
-                UnsafeBufferPointer<Int16>(
-                    start: $0.bindMemory(to: Int16.self).baseAddress!,
-                    count: data.count / MemoryLayout<Int16>.size))
+        // Check if the data needs conversion or if it’s already in the correct format
+        guard data.count % MemoryLayout<Int16>.size == 0 else {
+            print("Data is not aligned to 16-bit boundaries")
+            return Data() // Handle misaligned data
         }
-        return Data(buffer: UnsafeBufferPointer(start: audioBuffer, count: audioBuffer.count))
+
+        return data
+    }
+
+    private func cleanupAfterRecording() {
+        // Optionally remove the recorded file
+        do {
+            try FileManager.default.removeItem(at: self.directoryURL())
+            print("Temporary recorded file removed")
+        } catch {
+            print("Failed to remove temporary recorded file: \(error)")
+        }
+
+        // Optionally reset the audio session if needed
+        do {
+            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            print("Audio session deactivated")
+        } catch {
+            print("Failed to deactivate audio session: \(error)")
+        }
     }
 
     // AVAudioRecorderDelegate method
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         if flag {
             print("Recording finished successfully")
+        } else {
+            print("Recording failed or was interrupted")
         }
     }
 }
