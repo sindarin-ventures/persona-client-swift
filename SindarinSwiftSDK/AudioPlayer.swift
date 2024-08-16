@@ -76,7 +76,7 @@ class AudioPlayer: NSObject {
       audioQueue.append(playerItem)
       player.insert(playerItem, after: nil)
 
-      // Clear the buffer once data is written to file
+      // Clear the buffer once data is written to file.
       mp3DataBuffer.removeAll()
 
       // Start playback if not already playing
