@@ -15,8 +15,22 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
     override init() {
         self.audioSession = AVAudioSession.sharedInstance()
         super.init()
-        setupAudioSession()
-        setupAudioRecorder()
+        requestPermissionAndSetup()
+    }
+
+    private func requestPermissionAndSetup() {
+        audioSession.requestRecordPermission { [weak self] allowed in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if allowed {
+                    self.setupAudioSession()
+                    self.setupAudioRecorder()
+                } else {
+                    print("Recording permission was not granted.")
+                    // Handle the failure case here (e.g., show an alert to the user)
+                }
+            }
+        }
     }
 
     private func setupAudioSession() {
