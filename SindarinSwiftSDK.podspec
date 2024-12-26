@@ -7,7 +7,7 @@ Pod::Spec.new do |spec|
 
   spec.platform     = :ios, '12.0'
 
-  spec.homepage     = "https://github.com/yourusername/SindarinSwiftSDK"
+  spec.homepage     = "https://github.com/sindarin-ventures/persona-client-swift"
   spec.license      = { :type => "MIT", :file => "LICENSE" }
   spec.author       = { "Sindarin Ventures" => "support@sindarin.tech" }
   spec.source       = { :git => "https://github.com/sindarin-ventures/persona-client-swift.git", :tag => spec.version.to_s }
