@@ -84,7 +84,7 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
 
     private func startRecordingTimer() {
         recordingTimer = Timer.scheduledTimer(
-            timeInterval: 0.1, // Possibly reduce interval if necessary
+            timeInterval: 0.03, // Possibly reduce interval if necessary
             target: self,
             selector: #selector(readAudioChunk),
             userInfo: nil,
