@@ -35,7 +35,7 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
 
     private func setupAudioSession() {
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Failed to setup audio session: \(error)")
@@ -84,7 +84,7 @@ class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
 
     private func startRecordingTimer() {
         recordingTimer = Timer.scheduledTimer(
-            timeInterval: 0.03, // Possibly reduce interval if necessary
+            timeInterval: 0.1, // Possibly reduce interval if necessary
             target: self,
             selector: #selector(readAudioChunk),
             userInfo: nil,
