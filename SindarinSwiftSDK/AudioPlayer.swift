@@ -43,6 +43,7 @@ class AudioPlayer: NSObject {
 
     private func setupPlayer() {
         player = AVQueuePlayer()
+        player?.volume = 10
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(playerItemDidFinishPlaying(_:)),

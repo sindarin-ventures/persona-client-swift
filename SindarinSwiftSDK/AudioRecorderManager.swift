@@ -52,13 +52,13 @@ class AudioRecorderManager: NSObject {
         /// Returns an AsyncThrowingStream of AVAudioPCMBuffer
         let stream = aecAudioStream!.startAudioStreamAsync(enableAEC: true)
 
-        print("AEC enabled: \(aecAudioStream?.enableAutomaticEchoCancellation ?? false)")
-        print("Stream format: \(String(describing: aecAudioStream?.streamBasicDescription))")
+//        print("AEC enabled: \(aecAudioStream?.enableAutomaticEchoCancellation ?? false)")
+//        print("Stream format: \(String(describing: aecAudioStream?.streamBasicDescription))")
 
         recordingTask = Task {
             do {
                 isRecording = true
-                print("Audio recording started with AEC at \(sampleRate) Hz")
+//                print("Audio recording started with AEC at \(sampleRate) Hz")
 
                 // Capture buffers in an async for-await loop
                 for try await buffer in stream {
@@ -93,7 +93,7 @@ class AudioRecorderManager: NSObject {
 
         aecAudioStream = nil
         isRecording = false
-        print("Recording stopped")
+//        print("Recording stopped")
     }
 
     /**
@@ -109,7 +109,7 @@ class AudioRecorderManager: NSObject {
                         options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
                     try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
-                    print("Audio session configured for voice chat recording.")
+//                    print("Audio session configured for voice chat recording.")
                 } catch {
                     print("Error configuring AVAudioSession: \(error)")
                 }
@@ -128,12 +128,12 @@ class AudioRecorderManager: NSObject {
     private func extractInt16Data(from buffer: AVAudioPCMBuffer) -> Data? {
         let format = buffer.format
 
-        print("----- Buffer info -----")
-        print(" Sample Rate: \(format.sampleRate) Hz")
-        print(" Channel Count: \(format.channelCount)")
-        print(" Common Format: \(format.commonFormat)")
-        print(" Interleaved: \(format.isInterleaved ? "YES" : "NO")")
-        print(" Frame Length: \(buffer.frameLength)")
+//        print("----- Buffer info -----")
+//        print(" Sample Rate: \(format.sampleRate) Hz")
+//        print(" Channel Count: \(format.channelCount)")
+//        print(" Common Format: \(format.commonFormat)")
+//        print(" Interleaved: \(format.isInterleaved ? "YES" : "NO")")
+//        print(" Frame Length: \(buffer.frameLength)")
 
         guard let channelData = buffer.int16ChannelData?[0] else {
             print("No Int16 channel data (the format might be unsupported).")
@@ -142,25 +142,25 @@ class AudioRecorderManager: NSObject {
 
         let frameCount = Int(buffer.frameLength)
         let byteCount = frameCount * MemoryLayout<Int16>.size
-        print(" Byte Count: \(byteCount)")
+//        print(" Byte Count: \(byteCount)")
 
         let rawData = Data(bytes: channelData, count: byteCount)
 
-        if byteCount >= 20 {
-            let first10Samples = rawData.withUnsafeBytes { rawPtr in
-                Array(rawPtr.bindMemory(to: Int16.self).prefix(10))
-            }
-            print(" First 10 Int16 samples: \(first10Samples)")
-        }
+//        if byteCount >= 20 {
+//            let first10Samples = rawData.withUnsafeBytes { rawPtr in
+//                Array(rawPtr.bindMemory(to: Int16.self).prefix(10))
+//            }
+//            print(" First 10 Int16 samples: \(first10Samples)")
+//        }
 
-        let samples = rawData.withUnsafeBytes { ptr in
-            ptr.bindMemory(to: Int16.self)
-        }
-        let maxSample = samples.max() ?? 0
-        let minSample = samples.min() ?? 0
-        print("Min sample: \(minSample), Max sample: \(maxSample)")
+//        let samples = rawData.withUnsafeBytes { ptr in
+//            ptr.bindMemory(to: Int16.self)
+//        }
+//        let maxSample = samples.max() ?? 0
+//        let minSample = samples.min() ?? 0
+//        print("Min sample: \(minSample), Max sample: \(maxSample)")
 
-        print("-----------------------")
+//        print("-----------------------")
 
         return rawData
     }

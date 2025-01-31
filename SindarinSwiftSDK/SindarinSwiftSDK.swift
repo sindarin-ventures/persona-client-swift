@@ -415,7 +415,7 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
                 "conversationId": self.conversationId ?? "",
                 "fileBuffer": data,
             ])
-        print("Sent audio chunk")
+//        print("Sent audio chunk")
     }
 
     @objc func startRecording() {

@@ -1,11 +1,3 @@
-
-//
-//  ECAudioUnit.swift
-//  AECAudioUnit
-//
-//  Created by 0x67 on 2023-06-13.
-//
-
 import Foundation
 import AVFAudio
 import OSLog
@@ -25,7 +17,7 @@ public class AECAudioStream {
 
     private(set) var streamBasicDescription: AudioStreamBasicDescription
 
-    private let logger = Logger(subsystem: "com.0x67.echo-cancellation.AECAudioUnit", category: "AECAudioStream")
+    private let logger = Logger(subsystem: "com.sindarin.echo-cancellation.AECAudioUnit", category: "AECAudioStream")
 
     private(set) var sampleRate: Float64
 

@@ -1,10 +1,3 @@
-//
-//  File.swift
-//  AECAudioUnit
-//
-//  Created by 0x67 on 2023-06-13.
-//
-
 import Foundation
 
 /**
