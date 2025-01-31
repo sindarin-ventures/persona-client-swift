@@ -1,7 +1,7 @@
 Pod::Spec.new do |spec|
 
   spec.name         = "SindarinSwiftSDK"
-  spec.version      = "1.0.0"
+  spec.version      = "1.0.2"
   spec.summary      = "SindarinSwiftSDK enables ultra-low latency conversational AI."
   spec.description  = "SindarinSwiftSDK enables ultra-low latency conversational AI. Visit https://sindarin.tech for more information."
 
