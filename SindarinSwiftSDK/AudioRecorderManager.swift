@@ -1,151 +1,167 @@
 import AVFoundation
 import Foundation
+import OSLog
 
+/// A protocol for receiving captured audio data in 16-bit format.
 protocol AudioRecorderManagerDelegate: AnyObject {
+    /// Called whenever a new chunk of 16-bit PCM audio data is captured.
     func didCaptureAudioChunk(_ data: Data)
 }
 
-class AudioRecorderManager: NSObject, AVAudioRecorderDelegate {
-    private var audioRecorder: AVAudioRecorder?
-    private var audioSession: AVAudioSession
-    private var recordingTimer: Timer?
-    private var lastReadPosition: Int64 = 0 // To keep track of the last read position in the file
+/**
+ Manages audio recording using a voice-processing (AEC-enabled) audio unit via `AECAudioStream`.
+ */
+class AudioRecorderManager: NSObject {
+
+    private let audioSession = AVAudioSession.sharedInstance()
+
+    ///Сustom AECAudioStream for VoiceProcessing I/O
+    private var aecAudioStream: AECAudioStream?
+
+    /// A `Task` in which the async for-await loop over audio buffers is running.
+    private var recordingTask: Task<Void, Never>?
+
+    /// Indicates whether recording is currently active.
+    private(set) var isRecording = false
+
+    /// Desired audio sample rate (Hz). Default is 16 kHz.
+    public var sampleRate: Double = 16000.0
+
+    /// Delegate that will receive captured audio data chunks.
     weak var delegate: AudioRecorderManagerDelegate?
 
     override init() {
-        self.audioSession = AVAudioSession.sharedInstance()
         super.init()
-        requestPermissionAndSetup()
+        requestPermissionAndSetupSession()
     }
 
-    private func requestPermissionAndSetup() {
-        audioSession.requestRecordPermission { [weak self] allowed in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                if allowed {
-                    self.setupAudioSession()
-                    self.setupAudioRecorder()
-                } else {
-                    print("Recording permission was not granted.")
-                    // Handle the failure case here (e.g., show an alert to the user)
-                }
-            }
-        }
-    }
-
-    private func setupAudioSession() {
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("Failed to setup audio session: \(error)")
-        }
-    }
-
-    private func setupAudioRecorder() {
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ]
-
-        do {
-            audioRecorder = try AVAudioRecorder(url: self.directoryURL(), settings: settings)
-            audioRecorder?.delegate = self
-        } catch {
-            print("Failed to setup audio recorder: \(error)")
-        }
-    }
-
-    private func directoryURL() -> URL {
-        let fileManager = FileManager.default
-        let urls = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
-        let documentDirectory = urls.first!
-        return documentDirectory.appendingPathComponent("userSpeech.wav")
-    }
-
+    /**
+     Starts recording using `AECAudioStream` in async mode with acoustic echo cancellation enabled.
+     */
     func startRecording() {
-        audioRecorder?.prepareToRecord()
-        audioRecorder?.record()
-        startRecordingTimer()
-    }
+        guard !isRecording else {
+            return
+        }
 
-    func stopRecording() {
-        guard audioRecorder?.isRecording == true else { return }
-        audioRecorder?.stop()
-        recordingTimer?.invalidate()
-        recordingTimer = nil
-        lastReadPosition = 0 // Reset the read position
-
-        // Clean up resources after recording is finished
-        cleanupAfterRecording()
-    }
-
-    private func startRecordingTimer() {
-        recordingTimer = Timer.scheduledTimer(
-            timeInterval: 0.03, // Possibly reduce interval if necessary
-            target: self,
-            selector: #selector(readAudioChunk),
-            userInfo: nil,
-            repeats: true
+        aecAudioStream = AECAudioStream(
+            sampleRate: sampleRate,
+            enableRendererCallback: false,
+            rendererClosure: nil
         )
-    }
 
-    @objc private func readAudioChunk() {
-        guard let recorder = audioRecorder, recorder.isRecording else { return }
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: self.directoryURL())
-            defer { fileHandle.closeFile() } // Ensure the file is closed even if an error occurs
+        /// Returns an AsyncThrowingStream of AVAudioPCMBuffer
+        let stream = aecAudioStream!.startAudioStreamAsync(enableAEC: true)
 
-            fileHandle.seek(toFileOffset: UInt64(lastReadPosition))
-            let data = fileHandle.readDataToEndOfFile()
-            lastReadPosition += Int64(data.count)
+//        print("AEC enabled: \(aecAudioStream?.enableAutomaticEchoCancellation ?? false)")
+//        print("Stream format: \(String(describing: aecAudioStream?.streamBasicDescription))")
 
-            if !data.isEmpty {
-                let int16Data = convertTo16BitPcm(data)
-                delegate?.didCaptureAudioChunk(int16Data)
-                print("Captured audio chunk")
+        recordingTask = Task {
+            do {
+                isRecording = true
+//                print("Audio recording started with AEC at \(sampleRate) Hz")
+
+                // Capture buffers in an async for-await loop
+                for try await buffer in stream {
+                    guard let int16Data = self.extractInt16Data(from: buffer) else {
+                        continue
+                    }
+                    // Pass the captured chunk to our delegate
+                    self.delegate?.didCaptureAudioChunk(int16Data)
+                }
+            } catch {
+                print("Error while reading audio stream: \(error)")
             }
-        } catch {
-            print("Failed to read audio data: \(error)")
         }
     }
 
-    private func convertTo16BitPcm(_ data: Data) -> Data {
-        // Check if the data needs conversion or if it’s already in the correct format
-        guard data.count % MemoryLayout<Int16>.size == 0 else {
-            print("Data is not aligned to 16-bit boundaries")
-            return Data() // Handle misaligned data
-        }
+    /**
+     Stops recording by cancelling the Task and disposing of the AECAudioStream.
+     */
+    func stopRecording() {
+        guard isRecording else { return }
 
-        return data
-    }
+        // Cancel the Task to stop capturing
+        recordingTask?.cancel()
+        recordingTask = nil
 
-    private func cleanupAfterRecording() {
-        // Optionally remove the recorded file
+        // Stop the audio unit and dispose of resources
         do {
-            try FileManager.default.removeItem(at: self.directoryURL())
-            print("Temporary recorded file removed")
+            try aecAudioStream?.stopAudioUnit()
         } catch {
-            print("Failed to remove temporary recorded file: \(error)")
+            print("Error while stopping AECAudioStream: \(error)")
         }
 
-        // Optionally reset the audio session if needed
-        do {
-            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
-            print("Audio session deactivated")
-        } catch {
-            print("Failed to deactivate audio session: \(error)")
+        aecAudioStream = nil
+        isRecording = false
+//        print("Recording stopped")
+    }
+
+    /**
+     Requests permission to record audio and configures the `AVAudioSession` for voice chat.
+     */
+    private func requestPermissionAndSetupSession() {
+        audioSession.requestRecordPermission { [weak self] allowed in
+            guard let self = self else { return }
+            if allowed {
+                do {
+                    try self.audioSession.setCategory(.playAndRecord,
+                        mode: .voiceChat,
+                        options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+                    try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+//                    print("Audio session configured for voice chat recording.")
+                } catch {
+                    print("Error configuring AVAudioSession: \(error)")
+                }
+            } else {
+                print("Recording permission was not granted by the user.")
+            }
         }
     }
 
-    // AVAudioRecorderDelegate method
-    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        if flag {
-            print("Recording finished successfully")
-        } else {
-            print("Recording failed or was interrupted")
+    /**
+     Converts an `AVAudioPCMBuffer` to 16-bit PCM `Data` (mono).
+     
+     - Parameter buffer: The PCM buffer to extract audio data from.
+     - Returns: A `Data` object containing 16-bit PCM samples, or `nil` if format isn't supported.
+     */
+    private func extractInt16Data(from buffer: AVAudioPCMBuffer) -> Data? {
+        let format = buffer.format
+
+//        print("----- Buffer info -----")
+//        print(" Sample Rate: \(format.sampleRate) Hz")
+//        print(" Channel Count: \(format.channelCount)")
+//        print(" Common Format: \(format.commonFormat)")
+//        print(" Interleaved: \(format.isInterleaved ? "YES" : "NO")")
+//        print(" Frame Length: \(buffer.frameLength)")
+
+        guard let channelData = buffer.int16ChannelData?[0] else {
+            print("No Int16 channel data (the format might be unsupported).")
+            return nil
         }
+
+        let frameCount = Int(buffer.frameLength)
+        let byteCount = frameCount * MemoryLayout<Int16>.size
+//        print(" Byte Count: \(byteCount)")
+
+        let rawData = Data(bytes: channelData, count: byteCount)
+
+//        if byteCount >= 20 {
+//            let first10Samples = rawData.withUnsafeBytes { rawPtr in
+//                Array(rawPtr.bindMemory(to: Int16.self).prefix(10))
+//            }
+//            print(" First 10 Int16 samples: \(first10Samples)")
+//        }
+
+//        let samples = rawData.withUnsafeBytes { ptr in
+//            ptr.bindMemory(to: Int16.self)
+//        }
+//        let maxSample = samples.max() ?? 0
+//        let minSample = samples.min() ?? 0
+//        print("Min sample: \(minSample), Max sample: \(maxSample)")
+
+//        print("-----------------------")
+
+        return rawData
     }
 }

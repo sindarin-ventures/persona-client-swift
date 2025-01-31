@@ -31,7 +31,7 @@ class AudioPlayer: NSObject {
         audioSession = AVAudioSession.sharedInstance()
         do {
             if let audioSession = audioSession {
-                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+                try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers, ])
                 try audioSession.setActive(true)
             } else {
                 print("Audio session is not initialized")
@@ -43,6 +43,7 @@ class AudioPlayer: NSObject {
 
     private func setupPlayer() {
         player = AVQueuePlayer()
+        player?.volume = 10
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(playerItemDidFinishPlaying(_:)),
