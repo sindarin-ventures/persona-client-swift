@@ -116,7 +116,7 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         let personaConfig = config["personaConfig"] as? [String: Any] ?? [:]
         let options = config["options"] as? [String: Any] ?? [:]
 
-        let inputAudioSampleRate = 16000 // replace with actual sample rate from your AudioQueueManager
+        let inputAudioSampleRate = audioRecorderManager.sampleRate // replace with actual sample rate from your AudioQueueManager
 
         let initParams: [String: Any] = [
             "apiKey": self.apiKey ?? "",
