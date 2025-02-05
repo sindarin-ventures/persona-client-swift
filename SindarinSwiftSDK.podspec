@@ -5,7 +5,7 @@ Pod::Spec.new do |spec|
   spec.summary      = "SindarinSwiftSDK enables ultra-low latency conversational AI."
   spec.description  = "SindarinSwiftSDK enables ultra-low latency conversational AI. Visit https://sindarin.tech for more information."
 
-  spec.platform     = :ios, '15.6'
+  spec.platform     = :ios, '15.0'
 
   spec.homepage     = "https://github.com/sindarin-ventures/persona-client-swift"
   spec.license      = { :type => "MIT", :file => "LICENSE" }
