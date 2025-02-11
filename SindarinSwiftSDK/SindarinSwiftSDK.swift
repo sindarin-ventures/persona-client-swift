@@ -41,7 +41,7 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         self.audioRecorderManager = AudioRecorderManager()
         self.audioPlayer = AudioPlayer(
             timeUpdateInterval: CMTime(value: 10, timescale: 100),
-            initialVolume: 1.0
+            initialVolume: 10.0
         )
 
         super.init()
