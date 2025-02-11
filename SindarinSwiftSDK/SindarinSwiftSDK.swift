@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import SocketIO
+import AudioToolbox
 
 enum PersonaClientEvent: String {
     case messagesUpdate
@@ -22,7 +23,7 @@ enum PersonaClientEvent: String {
     case aiSpeechAmplitude
 }
 
-
+@MainActor
 public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderManagerDelegate {
     private var manager: SocketManager?
     private var socket: SocketIOClient?
@@ -32,10 +33,17 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
     private var conversationId: String?
     private var audioPlayer: AudioPlayer
     private var audioRecorderManager: AudioRecorderManager
+    private var streamProvider = AudioStreamProvider()
+    private var hasStartedPlayback = false
+    private var isPaused = false
 
     public override init() {
         self.audioRecorderManager = AudioRecorderManager()
-        self.audioPlayer = AudioPlayer()
+        self.audioPlayer = AudioPlayer(
+            timeUpdateInterval: CMTime(value: 10, timescale: 100),
+            initialVolume: 1.0
+        )
+
         super.init()
         self.audioRecorderManager.delegate = self
     }
@@ -64,7 +72,7 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         manager = SocketManager(
             socketURL: URL(string: url)!,
             config: [
-                    .log(true),
+                    .log(false),
                     .compress,
                     .reconnects(false),
                     .forceWebsockets(true),
@@ -154,12 +162,16 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
 
     public func pause() {
         self.audioPlayer.stop()
+        self.streamProvider.finish()
+        self.hasStartedPlayback = false
+        self.isPaused = true
         self.stopRecording()
         self.emit(event: "system", data: ["message": "pause"])
     }
 
     public func resume() {
         self.startRecording()
+        self.isPaused = false
         self.emit(event: "system", data: ["message": "resume"])
     }
 
@@ -169,6 +181,8 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         self.socket = nil
         self.messages = []
         self.audioPlayer.stop()
+        self.streamProvider.finish()
+        self.hasStartedPlayback = false
         self.stopRecording()
         self.emit(event: "system", data: ["message": "end"])
 
@@ -313,8 +327,9 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
                     self.emit(event: "ai_speech_started", data: nil)
                 } else if let speechStarted = json["speech_started"] as? Bool, speechStarted {
                     self.emit(event: "user_speech_started", data: nil)
-                    print("user_speech_started")
                     self.audioPlayer.stop()
+                    self.streamProvider.finish()
+                    self.hasStartedPlayback = false
                 } else if let speechEnded = json["speech_ended"] as? Bool, speechEnded {
                     self.emit(event: "user_speech_ended", data: nil)
                 }
@@ -348,8 +363,18 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
 
         socket.on("reply_chunk") { [weak self] data, ack in
             guard let self = self, let chunk = data.first as? Data else { return }
-            self.audioPlayer.bufferAudio(chunk: chunk)
+            if self.isPaused { return }
+            if !self.hasStartedPlayback {
+                self.hasStartedPlayback = true
+                self.streamProvider = AudioStreamProvider()
+                self.audioPlayer.start(self.streamProvider.stream, type: kAudioFileMP3Type)
+            }
+
+            self.streamProvider.continuation?.yield(chunk)
+
+
         }
+
 
         socket.on("reply_end") { data, ack in
             self.emit(event: "reply_end", data: nil)
@@ -407,15 +432,15 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         return nil
     }
 
-    // Setup audio recorder
+// Setup audio recorder
     func didCaptureAudioChunk(_ data: Data) {
+        if self.socket?.status == .disconnected { return }
         self.socket?.emit(
             "audio_chunk_continuous",
             [
                 "conversationId": self.conversationId ?? "",
                 "fileBuffer": data,
             ])
-//        print("Sent audio chunk")
     }
 
     @objc func startRecording() {
@@ -426,4 +451,19 @@ public class SindarinSwiftSDK: NSObject, AVAudioPlayerDelegate, AudioRecorderMan
         audioRecorderManager.stopRecording()
     }
 
+}
+
+class AudioStreamProvider {
+    var continuation: AsyncThrowingStream<Data, Error>.Continuation?
+
+    lazy var stream: AsyncThrowingStream<Data, Error> = {
+        AsyncThrowingStream<Data, Error> { continuation in
+            self.continuation = continuation
+        }
+    }()
+
+    func finish() {
+        continuation?.finish()
+        continuation = nil
+    }
 }
